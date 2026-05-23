@@ -952,7 +952,7 @@ fn test_client_wins_freelancer_stake_slashed() {
     let slash_event = events.iter().find(|(_, topics, _)| {
         if topics.len() >= 2 {
             let t1: Symbol = topics.get(1).unwrap().into_val(&env);
-            return t1 == Symbol::new(&env, "stk_slashed");
+            return t1 == Symbol::new(&env, "reput_slashed");
         }
         false
     });
@@ -977,7 +977,7 @@ fn test_freelancer_wins_client_stake_slashed() {
     let slash_event = events.iter().find(|(_, topics, _)| {
         if topics.len() >= 2 {
             let t1: Symbol = topics.get(1).unwrap().into_val(&env);
-            return t1 == Symbol::new(&env, "stk_slashed");
+            return t1 == Symbol::new(&env, "reput_slashed");
         }
         false
     });

@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import { logger } from "../lib/logger";
 
 const prisma = new PrismaClient();
@@ -55,7 +55,7 @@ export class WebhookService {
     await Promise.all(
       webhooks.map(async (wh) => {
         const delivery = await prisma.webhookDelivery.create({
-          data: { webhookId: wh.id, event, payload, status: "pending" },
+          data: { webhookId: wh.id, event, payload: payload as Prisma.InputJsonValue, status: "pending" },
         });
         void this.deliver(delivery.id);
       }),

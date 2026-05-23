@@ -5,11 +5,12 @@ import {
     flagJobSchema,
     suspendUserSchema,
     getUsersAdminQuerySchema,
+    getJobsAdminQuerySchema,
     overrideDisputeSchema,
     queryPendingDisputesSchema,
     queryFlaggedUsersSchema
 } from "../schemas/admin";
-import { z } from "zod";
+import { z, ZodError } from "zod";
 import { logAdminAction } from "../utils/auditLogger";
 import { NotificationService } from "../services/notification.service";
 import { validate } from "../middleware/validation";

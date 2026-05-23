@@ -1,20 +1,26 @@
-import pino from "pino";
 import { getRequestId } from "./request-context";
 
-export const logger = pino({
-  level: process.env.LOG_LEVEL || (process.env.NODE_ENV === "production" ? "info" : "debug"),
-  base: undefined,
-  timestamp: pino.stdTimeFunctions.isoTime,
-  mixin() {
-    const requestId = getRequestId();
-    return requestId ? { requestId } : {};
-  },
-});
+type LogFn = (obj: Record<string, unknown> | string, msg?: string) => void;
 
-/**
- * Backwards-compatible no-op.
- * Previously patched console.* to include requestId; prefer `logger` instead.
- */
+function makeLogFn(level: string, consoleFn: (...args: unknown[]) => void): LogFn {
+  return (obj, msg) => {
+    const requestId = getRequestId();
+    const base = { level, ...(requestId ? { requestId } : {}) };
+    if (typeof obj === "string") {
+      consoleFn(JSON.stringify({ ...base, msg: obj }));
+    } else {
+      consoleFn(JSON.stringify({ ...base, ...obj, ...(msg ? { msg } : {}) }));
+    }
+  };
+}
+
+export const logger = {
+  info: makeLogFn("info", console.log),
+  warn: makeLogFn("warn", console.warn),
+  error: makeLogFn("error", console.error),
+  debug: makeLogFn("debug", console.debug),
+};
+
 export function installRequestIdConsolePatch(): void {
   return;
 }
