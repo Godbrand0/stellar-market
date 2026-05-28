@@ -28,6 +28,32 @@ import {
 import { generateToken, hashToken } from "../utils/token";
 import { sendPasswordResetEmail, sendVerificationEmail } from "../utils/email";
 
+const ACCESS_TOKEN_EXPIRY = "15m";
+const REFRESH_TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function setRefreshCookie(res: Response, token: string) {
+  res.cookie("refreshToken", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    maxAge: REFRESH_TOKEN_EXPIRY_MS,
+    path: "/",
+  });
+}
+
+async function issueRefreshToken(userId: string): Promise<string> {
+  const rawToken = generateToken();
+  const tokenHash = hashToken(rawToken);
+  await prisma.refreshToken.create({
+    data: {
+      tokenHash,
+      userId,
+      expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRY_MS),
+    },
+  });
+  return rawToken;
+}
+
 const router = Router();
 /**
  * @swagger
@@ -179,8 +205,11 @@ router.post(
     }
 
     const token = jwt.sign({ userId: user.id }, config.jwtSecret, {
-      expiresIn: "7d",
+      expiresIn: ACCESS_TOKEN_EXPIRY,
     });
+
+    const refreshRaw = await issueRefreshToken(user.id);
+    setRefreshCookie(res, refreshRaw);
 
     res.status(201).json({
       user: {
@@ -234,8 +263,11 @@ router.post(
     }
 
     const token = jwt.sign({ userId: user.id }, config.jwtSecret, {
-      expiresIn: "7d",
+      expiresIn: ACCESS_TOKEN_EXPIRY,
     });
+
+    const refreshRaw = await issueRefreshToken(user.id);
+    setRefreshCookie(res, refreshRaw);
 
     res.json({
       user: {
@@ -444,8 +476,10 @@ router.post(
       const result = verifySync({ token: code, secret });
       if (result.valid) {
         const token = jwt.sign({ userId: user.id }, config.jwtSecret, {
-          expiresIn: "7d",
+          expiresIn: ACCESS_TOKEN_EXPIRY,
         });
+        const refreshRaw = await issueRefreshToken(user.id);
+        setRefreshCookie(res, refreshRaw);
         return res.json({
           user: {
             id: user.id,
@@ -473,8 +507,10 @@ router.post(
         });
 
         const token = jwt.sign({ userId: user.id }, config.jwtSecret, {
-          expiresIn: "7d",
+          expiresIn: ACCESS_TOKEN_EXPIRY,
         });
+        const refreshRaw = await issueRefreshToken(user.id);
+        setRefreshCookie(res, refreshRaw);
         return res.json({
           user: {
             id: user.id,
@@ -589,6 +625,61 @@ router.post(
     await sendVerificationEmail(user.email, rawToken);
 
     res.json({ message: "Verification email sent." });
+  }),
+);
+
+// POST /refresh — issue a new access token using the httpOnly refresh token cookie
+router.post(
+  "/refresh",
+  asyncHandler(async (req: Request, res: Response) => {
+    const rawToken: string | undefined = req.cookies?.refreshToken;
+    if (!rawToken) {
+      return res.status(401).json({ error: "Refresh token missing." });
+    }
+
+    const tokenHash = hashToken(rawToken);
+    const stored = await prisma.refreshToken.findUnique({ where: { tokenHash } });
+
+    if (!stored || stored.revoked || stored.expiresAt < new Date()) {
+      return res.status(401).json({ error: "Invalid or expired refresh token." });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: stored.userId },
+      select: { id: true, isSuspended: true },
+    });
+
+    if (!user) {
+      return res.status(401).json({ error: "User not found." });
+    }
+
+    if (user.isSuspended) {
+      return res.status(403).json({ error: "Account suspended." });
+    }
+
+    const token = jwt.sign({ userId: stored.userId }, config.jwtSecret, {
+      expiresIn: ACCESS_TOKEN_EXPIRY,
+    });
+
+    res.json({ token });
+  }),
+);
+
+// POST /logout — revoke the refresh token stored in the cookie
+router.post(
+  "/logout",
+  asyncHandler(async (req: Request, res: Response) => {
+    const rawToken: string | undefined = req.cookies?.refreshToken;
+    if (rawToken) {
+      const tokenHash = hashToken(rawToken);
+      await prisma.refreshToken
+        .update({ where: { tokenHash }, data: { revoked: true } })
+        .catch(() => {
+          // ignore — token may not exist; logout should always succeed
+        });
+    }
+    res.clearCookie("refreshToken", { path: "/" });
+    res.json({ message: "Logged out successfully." });
   }),
 );
 

@@ -4,6 +4,11 @@ import { config } from "../config";
 import { NotificationService } from "./notification.service";
 import { logger } from "../lib/logger";
 import { setHorizonListenerHealth } from "../lib/health";
+import { CircuitBreaker } from "../lib/circuit-breaker";
+import type { CircuitBreakerStatus } from "../lib/circuit-breaker";
+
+export type { CircuitBreakerStatus };
+export type { CircuitState } from "../lib/circuit-breaker";
 
 const prisma = new PrismaClient();
 const server = new rpc.Server(config.stellar.rpcUrl);
@@ -11,6 +16,26 @@ const server = new rpc.Server(config.stellar.rpcUrl);
 const POLL_INTERVAL_MS = 5_000;
 const MAX_EVENTS_PER_POLL = 200;
 const SYNC_STATE_ID = "default";
+
+// ─── Circuit Breaker instance ─────────────────────────────────────────────────
+
+const horizonCB = new CircuitBreaker({
+  failureThreshold: 5,
+  openDurationMs: 60_000,
+  name: "HorizonListener",
+});
+
+/** Derive the health string exposed on GET /health. */
+export function getHorizonListenerHealth(): "connected" | "degraded" | "down" {
+  return horizonCB.getHealthLabel();
+}
+
+/** Full circuit-breaker status (for tests / internal use). */
+export function getCircuitBreakerStatus(): Readonly<CircuitBreakerStatus> {
+  return horizonCB.getStatus();
+}
+
+// ─── Soroban event types ──────────────────────────────────────────────────────
 
 type SorobanEvent = Awaited<ReturnType<typeof server.getEvents>>["events"][number];
 
@@ -63,10 +88,6 @@ async function setLastIndexedLedger(ledger: number): Promise<void> {
 
 /**
  * escrow / created — (job_count: u64, client: Address, freelancer: Address)
- *
- * The on-chain job was successfully created.  Find the matching DB row by
- * contractJobId and confirm its escrow status is UNFUNDED.  Handles the case
- * where the backend was down when the frontend submitted the transaction.
  */
 async function handleJobCreated(event: SorobanEvent): Promise<void> {
   const data = scValToNative(event.value) as unknown[];
@@ -87,8 +108,6 @@ async function handleJobCreated(event: SorobanEvent): Promise<void> {
 
 /**
  * escrow / funded — (job_id: u64, client: Address)
- *
- * Escrow has been funded.  Transition the job to IN_PROGRESS / FUNDED.
  */
 async function handleJobFunded(event: SorobanEvent): Promise<void> {
   const data = scValToNative(event.value) as unknown[];
@@ -109,8 +128,6 @@ async function handleJobFunded(event: SorobanEvent): Promise<void> {
 
 /**
  * escrow / pmt_released — (job_id: u64, freelancer: Address, amount: i128)
- *
- * All milestone payments released; job is complete.
  */
 async function handlePaymentReleased(event: SorobanEvent): Promise<void> {
   const data = scValToNative(event.value) as unknown[];
@@ -127,7 +144,6 @@ async function handlePaymentReleased(event: SorobanEvent): Promise<void> {
   });
 
   if (updated.count > 0) {
-    // Notify both parties
     const job = await prisma.job.findFirst({
       where: { contractJobId: onChainJobId },
       select: { clientId: true, freelancerId: true, title: true },
@@ -154,9 +170,6 @@ async function handlePaymentReleased(event: SorobanEvent): Promise<void> {
 
 /**
  * dispute / raised — (dispute_id: u64, job_id: u64, initiator: Address)
- *
- * A dispute was opened on-chain.  Upsert the DB Dispute record and set the
- * job status to DISPUTED.
  */
 async function handleDisputeOpened(event: SorobanEvent): Promise<void> {
   const data = scValToNative(event.value) as unknown[];
@@ -165,7 +178,6 @@ async function handleDisputeOpened(event: SorobanEvent): Promise<void> {
   const onChainDisputeId = bigintToStr(data[0]);
   const onChainJobId = bigintToStr(data[1]);
 
-  // Find the job in DB by contractJobId
   const job = await prisma.job.findFirst({
     where: { contractJobId: onChainJobId },
     select: { id: true, clientId: true, freelancerId: true, dispute: true },
@@ -176,13 +188,11 @@ async function handleDisputeOpened(event: SorobanEvent): Promise<void> {
     return;
   }
 
-  // Mark job as DISPUTED
   await prisma.job.update({
     where: { id: job.id },
     data: { status: "DISPUTED", escrowStatus: "DISPUTED" },
   });
 
-  // Upsert dispute record — idempotent via onChainDisputeId unique constraint
   await prisma.dispute.upsert({
     where: { onChainDisputeId },
     update: { status: "OPEN" },
@@ -197,7 +207,6 @@ async function handleDisputeOpened(event: SorobanEvent): Promise<void> {
     },
   });
 
-  // Notify both parties
   const notifyIds = [job.clientId, job.freelancerId].filter(Boolean) as string[];
   await Promise.all(
     notifyIds.map((userId) =>
@@ -216,8 +225,6 @@ async function handleDisputeOpened(event: SorobanEvent): Promise<void> {
 
 /**
  * dispute / resolved — (dispute_id: u64, dispute_status: DisputeStatus)
- *
- * Voting concluded and the dispute has been resolved on-chain.
  */
 async function handleDisputeResolved(event: SorobanEvent): Promise<void> {
   const data = scValToNative(event.value) as unknown[];
@@ -226,7 +233,6 @@ async function handleDisputeResolved(event: SorobanEvent): Promise<void> {
   const onChainDisputeId = bigintToStr(data[0]);
   const rawStatus = enumVariant(data[1]);
 
-  // Map on-chain DisputeStatus variants to DB DisputeStatus + job outcomes
   let dbDisputeStatus: "OPEN" | "IN_PROGRESS" | "RESOLVED" = "RESOLVED";
   let jobStatus: "COMPLETED" | "CANCELLED" | null = null;
   let outcome: string = rawStatus;
@@ -251,10 +257,7 @@ async function handleDisputeResolved(event: SorobanEvent): Promise<void> {
   });
 
   if (!dispute) {
-    logger.warn(
-      { onChainDisputeId },
-      "[HorizonListener] DisputeResolved — no DB dispute",
-    );
+    logger.warn({ onChainDisputeId }, "[HorizonListener] DisputeResolved — no DB dispute");
     return;
   }
 
@@ -279,7 +282,6 @@ async function handleDisputeResolved(event: SorobanEvent): Promise<void> {
     }
   });
 
-  // Notify both parties
   const notifyIds = [dispute.clientId, dispute.freelancerId].filter(Boolean) as string[];
   await Promise.all(
     notifyIds.map((userId) =>
@@ -298,9 +300,6 @@ async function handleDisputeResolved(event: SorobanEvent): Promise<void> {
 
 /**
  * reput / badge — (user_address: Address, tier: ReputationTier)
- *
- * A reputation badge was awarded on-chain.  Upsert the DB Badge record and
- * notify the user.
  */
 async function handleBadgeAwarded(event: SorobanEvent): Promise<void> {
   const data = scValToNative(event.value) as unknown[];
@@ -331,7 +330,6 @@ async function handleBadgeAwarded(event: SorobanEvent): Promise<void> {
     },
   });
 
-  // Only notify on first award (upsert created a new row means awardedLedger changed)
   if (result.awardedLedger === event.ledger) {
     await NotificationService.sendNotification({
       userId: user.id,
@@ -374,9 +372,19 @@ async function processEvent(event: SorobanEvent): Promise<void> {
   }
 }
 
-// ─── polling loop ─────────────────────────────────────────────────────────────
+// ─── polling loop (circuit-breaker guarded) ───────────────────────────────────
 
 async function poll(): Promise<void> {
+  // Circuit breaker gate
+  if (!horizonCB.allowRequest()) {
+    const status = horizonCB.getStatus();
+    logger.debug(
+      { state: status.state, openedAt: status.openedAt },
+      "[HorizonListener] Circuit open — skipping poll",
+    );
+    return;
+  }
+
   const contractIds = [
     config.stellar.escrowContractId,
     config.stellar.disputeContractId,
@@ -393,19 +401,21 @@ async function poll(): Promise<void> {
   try {
     const latest = await server.getLatestLedger();
     if (lastLedger === 0) {
-      // First run — start from the current tip so we don't replay all history
       startLedger = latest.sequence;
       await setLastIndexedLedger(startLedger);
       logger.info({ startLedger }, "[HorizonListener] First run — starting from ledger");
+      horizonCB.onSuccess();
       return;
     }
     startLedger = lastLedger + 1;
 
     if (startLedger > latest.sequence) {
-      return; // nothing new
+      horizonCB.onSuccess(); // Horizon is reachable, nothing new
+      return;
     }
   } catch (err) {
     logger.error({ err }, "[HorizonListener] Failed to fetch latest ledger");
+    horizonCB.onFailure();
     return;
   }
 
@@ -419,18 +429,22 @@ async function poll(): Promise<void> {
       limit: MAX_EVENTS_PER_POLL,
     });
     events = result.events;
+    horizonCB.onSuccess(); // successful Horizon call
   } catch (err: any) {
-    // Soroban RPC returns an error when startLedger is before the retention window.
-    // Reset to the latest ledger so we don't loop on the same bad cursor.
     const msg: string = err?.message ?? "";
     if (msg.includes("startLedger") || msg.includes("ledger")) {
+      // Cursor out of retention window — reset, but don't count as a Horizon failure
       logger.warn("[HorizonListener] startLedger out of retention window, resetting cursor");
       try {
         const latest = await server.getLatestLedger();
         await setLastIndexedLedger(latest.sequence);
-      } catch (_) {}
+        horizonCB.onSuccess();
+      } catch (_) {
+        horizonCB.onFailure();
+      }
     } else {
       logger.error({ err }, "[HorizonListener] getEvents error");
+      horizonCB.onFailure();
     }
     return;
   }
