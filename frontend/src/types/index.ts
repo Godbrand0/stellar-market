@@ -1,18 +1,22 @@
 export interface User {
   id: string;
-  walletAddress: string;
+  walletAddress?: string | null;
   username: string;
   email?: string;
   emailVerified?: boolean;
   bio?: string;
   avatarUrl?: string;
-  role: "CLIENT" | "FREELANCER";
+  role: "CLIENT" | "FREELANCER" | "ADMIN";
   twoFactorEnabled?: boolean;
   skills?: string[];
   averageRating?: number;
   reviewCount?: number;
   availability?: boolean;
   completedOnboarding?: boolean;
+  authMethods?: {
+    email: boolean;
+    wallet: boolean;
+  };
   reputation?: {
     totalScore: string;
     totalWeight: string;
@@ -75,7 +79,7 @@ export interface Job {
   freelancer?: User;
   milestones: Milestone[];
   contractJobId?: string;
-  escrowStatus: "UNFUNDED" | "FUNDED" | "COMPLETED" | "CANCELLED" | "DISPUTED";
+  escrowStatus: "UNFUNDED" | "FUNDED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "DISPUTED";
   revisionProposal?: RevisionProposal | null;
   imageUrl?: string;
   createdAt: string;
@@ -189,6 +193,15 @@ export interface Vote {
   voter: User;
 }
 
+export interface DisputeEvidence {
+  id: string;
+  ipfsHash: string;
+  fileName: string;
+  fileType: string;
+  uploadedAt: string;
+  uploaderAddress: string;
+}
+
 export interface Dispute {
   id: string;
   jobId: string;
@@ -206,6 +219,8 @@ export interface Dispute {
   initiator: User;
   respondent: User;
   votes: Vote[];
+  evidence?: DisputeEvidence[];
+  arbitrators?: string[];
 }
 
 export interface Transaction {

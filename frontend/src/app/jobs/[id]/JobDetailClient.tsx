@@ -33,6 +33,7 @@ import ProposeRevisionModal, {
 import { Job, Application, PaginatedResponse, Review } from "@/types";
 import { parseJobIdFromResult } from "@/utils/stellar";
 import ShareMenu from "@/components/ShareMenu";
+import WalletAddress from "@/components/WalletAddress";
 
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
@@ -1229,10 +1230,7 @@ export default function JobDetailClient() {
                 <div className="font-medium text-theme-heading">
                   {job.client.username}
                 </div>
-                <div className="text-xs text-theme-text">
-                  {job.client.walletAddress.slice(0, 8)}...
-                  {job.client.walletAddress.slice(-8)}
-                </div>
+                <WalletAddress address={job.client.walletAddress} />
               </div>
             </div>
             <p className="text-sm text-theme-text mb-4">{job.client.bio}</p>
