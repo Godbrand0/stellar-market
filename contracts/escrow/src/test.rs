@@ -3926,3 +3926,439 @@ fn test_extend_deadline_extends_ttl() {
     let job = contract.get_job(&job_id);
     assert_eq!(job.milestones.get(0).unwrap().deadline, new_deadline);
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EVENT LOGGING TESTS (#522)
+// ══════════════════════════════════════════════════════════════════════════════
+// These tests verify that all six core escrow state transition events are
+// emitted with correct data at the appropriate points in the job lifecycle.
+// ══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_escrow_created_event_emitted_with_correct_data() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let (contract, client_addr, freelancer, token, _admin) = setup_test(&env);
+
+    let milestones = vec![
+        &env,
+        (
+            String::from_str(&env, "Design mockups"),
+            500_i128,
+            JOB_DEADLINE,
+        ),
+        (
+            String::from_str(&env, "Frontend implementation"),
+            1000_i128,
+            JOB_DEADLINE,
+        ),
+        (
+            String::from_str(&env, "Backend integration"),
+            1500_i128,
+            JOB_DEADLINE,
+        ),
+    ];
+
+    let expected_total: i128 = 500 + 1000 + 1500;
+
+    let job_id = contract.create_job(
+        &client_addr,
+        &freelancer,
+        &token,
+        &milestones,
+        &JOB_DEADLINE,
+        &GRACE_PERIOD,
+    );
+
+    // Read emitted events
+    let events = env.events().all();
+    let last_event = events.last().unwrap();
+
+    // Assert event is from the contract
+    assert_eq!(last_event.0, contract.address);
+
+    // Assert topics: ("escrow", "created")
+    let topic0: Symbol = last_event.1.get(0).unwrap().into_val(&env);
+    let topic1: Symbol = last_event.1.get(1).unwrap().into_val(&env);
+    assert_eq!(topic0, symbol_short!("escrow"));
+    assert_eq!(topic1, symbol_short!("created"));
+
+    // Assert data: (job_id, client, freelancer, token, total_amount)
+    let data: (u64, Address, Address, Address, i128) = last_event.2.into_val(&env);
+    assert_eq!(data.0, job_id);
+    assert_eq!(data.1, client_addr);
+    assert_eq!(data.2, freelancer);
+    assert_eq!(data.3, token);
+    assert_eq!(data.4, expected_total);
+}
+
+#[test]
+fn test_escrow_funded_event_emitted_with_correct_data() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let (contract, client_addr, freelancer, token, _admin) = setup_test(&env);
+
+    let milestones = vec![
+        &env,
+        (String::from_str(&env, "Task 1"), 1000_i128, JOB_DEADLINE),
+    ];
+
+    let job_id = contract.create_job(
+        &client_addr,
+        &freelancer,
+        &token,
+        &milestones,
+        &JOB_DEADLINE,
+        &GRACE_PERIOD,
+    );
+
+    contract.fund_job(&job_id, &client_addr);
+
+    // Read emitted events
+    let events = env.events().all();
+    let last_event = events.last().unwrap();
+
+    // Assert event is from the contract
+    assert_eq!(last_event.0, contract.address);
+
+    // Assert topics: ("escrow", "funded")
+    let topic0: Symbol = last_event.1.get(0).unwrap().into_val(&env);
+    let topic1: Symbol = last_event.1.get(1).unwrap().into_val(&env);
+    assert_eq!(topic0, symbol_short!("escrow"));
+    assert_eq!(topic1, symbol_short!("funded"));
+
+    // Assert data: (job_id, client, freelancer, token, total_amount)
+    let data: (u64, Address, Address, Address, i128) = last_event.2.into_val(&env);
+    assert_eq!(data.0, job_id);
+    assert_eq!(data.1, client_addr);
+    assert_eq!(data.2, freelancer);
+    assert_eq!(data.3, token);
+    assert_eq!(data.4, 1000_i128);
+}
+
+#[test]
+fn test_milestone_released_event_emitted_with_correct_data() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let (contract, client_addr, freelancer, token, _admin) = setup_test(&env);
+
+    let milestones = vec![
+        &env,
+        (String::from_str(&env, "Task 1"), 1000_i128, JOB_DEADLINE),
+        (String::from_str(&env, "Task 2"), 500_i128, JOB_DEADLINE),
+    ];
+
+    let job_id = contract.create_job(
+        &client_addr,
+        &freelancer,
+        &token,
+        &milestones,
+        &JOB_DEADLINE,
+        &GRACE_PERIOD,
+    );
+
+    contract.fund_job(&job_id, &client_addr);
+    contract.submit_milestone(&job_id, &0, &freelancer);
+    contract.approve_milestone(&job_id, &0, &client_addr);
+
+    // Read emitted events and find the milestone event
+    let events = env.events().all();
+    let milestone_event = events
+        .iter()
+        .rev()
+        .find(|e| {
+            if e.1.len() >= 2 {
+                let topic1: Symbol = e.1.get(1).unwrap().into_val(&env);
+                topic1 == symbol_short!("milestone")
+            } else {
+                false
+            }
+        })
+        .expect("milestone event should be emitted");
+
+    // Assert event is from the contract
+    assert_eq!(milestone_event.0, contract.address);
+
+    // Assert topics: ("escrow", "milestone")
+    let topic0: Symbol = milestone_event.1.get(0).unwrap().into_val(&env);
+    let topic1: Symbol = milestone_event.1.get(1).unwrap().into_val(&env);
+    assert_eq!(topic0, symbol_short!("escrow"));
+    assert_eq!(topic1, symbol_short!("milestone"));
+
+    // Assert data: (job_id, milestone_id, client, freelancer, amount)
+    let data: (u64, u32, Address, Address, i128) = milestone_event.2.into_val(&env);
+    assert_eq!(data.0, job_id);
+    assert_eq!(data.1, 0u32);
+    assert_eq!(data.2, client_addr);
+    assert_eq!(data.3, freelancer);
+    assert_eq!(data.4, 1000_i128);
+}
+
+#[test]
+fn test_escrow_refunded_event_emitted_with_correct_data() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let (contract, client_addr, freelancer, token, _admin) = setup_test(&env);
+
+    let milestones = vec![
+        &env,
+        (String::from_str(&env, "Task 1"), 1000_i128, JOB_DEADLINE),
+    ];
+
+    let job_id = contract.create_job(
+        &client_addr,
+        &freelancer,
+        &token,
+        &milestones,
+        &JOB_DEADLINE,
+        &GRACE_PERIOD,
+    );
+
+    contract.fund_job(&job_id, &client_addr);
+
+    // Advance time past job_deadline + grace period
+    env.ledger()
+        .with_mut(|l| l.timestamp = JOB_DEADLINE + GRACE_PERIOD + 1);
+
+    contract.claim_refund(&job_id, &client_addr);
+
+    // Read emitted events
+    let events = env.events().all();
+    let last_event = events.last().unwrap();
+
+    // Assert event is from the contract
+    assert_eq!(last_event.0, contract.address);
+
+    // Assert topics: ("escrow", "refund")
+    let topic0: Symbol = last_event.1.get(0).unwrap().into_val(&env);
+    let topic1: Symbol = last_event.1.get(1).unwrap().into_val(&env);
+    assert_eq!(topic0, symbol_short!("escrow"));
+    assert_eq!(topic1, symbol_short!("refund"));
+
+    // Assert data: (job_id, refund_amount, client, freelancer)
+    let data: (u64, i128, Address, Address) = last_event.2.into_val(&env);
+    assert_eq!(data.0, job_id);
+    assert_eq!(data.1, 1000_i128); // Full refund
+    assert_eq!(data.2, client_addr);
+    assert_eq!(data.3, freelancer);
+}
+
+#[test]
+fn test_escrow_disputed_event_emitted_with_correct_data() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let (contract, client_addr, freelancer, token, _admin) = setup_test(&env);
+
+    let milestones = vec![
+        &env,
+        (String::from_str(&env, "Task 1"), 1000_i128, JOB_DEADLINE),
+    ];
+
+    let job_id = contract.create_job(
+        &client_addr,
+        &freelancer,
+        &token,
+        &milestones,
+        &JOB_DEADLINE,
+        &GRACE_PERIOD,
+    );
+
+    contract.fund_job(&job_id, &client_addr);
+
+    // Simulate dispute resolution (normally called by dispute contract)
+    contract.resolve_dispute_callback(&job_id, &DisputeResolution::ClientWins);
+
+    // Read emitted events
+    let events = env.events().all();
+    let last_event = events.last().unwrap();
+
+    // Assert event is from the contract
+    assert_eq!(last_event.0, contract.address);
+
+    // Assert topics: ("escrow", "dispute")
+    let topic0: Symbol = last_event.1.get(0).unwrap().into_val(&env);
+    let topic1: Symbol = last_event.1.get(1).unwrap().into_val(&env);
+    assert_eq!(topic0, symbol_short!("escrow"));
+    assert_eq!(topic1, symbol_short!("dispute"));
+
+    // Assert data: (job_id, resolution, client, freelancer, token)
+    let data: (u64, DisputeResolution, Address, Address, Address) = last_event.2.into_val(&env);
+    assert_eq!(data.0, job_id);
+    assert_eq!(data.1, DisputeResolution::ClientWins);
+    assert_eq!(data.2, client_addr);
+    assert_eq!(data.3, freelancer);
+    assert_eq!(data.4, token);
+}
+
+#[test]
+fn test_escrow_completed_event_emitted_with_correct_data() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let (contract, client_addr, freelancer, token, _admin) = setup_test(&env);
+
+    let milestones = vec![
+        &env,
+        (String::from_str(&env, "Task 1"), 1000_i128, JOB_DEADLINE),
+    ];
+
+    let job_id = contract.create_job(
+        &client_addr,
+        &freelancer,
+        &token,
+        &milestones,
+        &JOB_DEADLINE,
+        &GRACE_PERIOD,
+    );
+
+    contract.fund_job(&job_id, &client_addr);
+    contract.submit_milestone(&job_id, &0, &freelancer);
+    contract.approve_milestone(&job_id, &0, &client_addr);
+
+    // Read emitted events
+    let events = env.events().all();
+    let last_event = events.last().unwrap();
+
+    // Assert event is from the contract
+    assert_eq!(last_event.0, contract.address);
+
+    // Assert topics: ("escrow", "pmt_released")
+    let topic0: Symbol = last_event.1.get(0).unwrap().into_val(&env);
+    let topic1: Symbol = last_event.1.get(1).unwrap().into_val(&env);
+    assert_eq!(topic0, symbol_short!("escrow"));
+    assert_eq!(topic1, Symbol::new(&env, "pmt_released"));
+
+    // Assert data: (job_id, freelancer, amount)
+    let data: (u64, Address, i128) = last_event.2.into_val(&env);
+    assert_eq!(data.0, job_id);
+    assert_eq!(data.1, freelancer);
+    assert_eq!(data.2, 1000_i128); // Net amount (no fee in this test)
+
+    // Verify job status is Completed
+    let job = contract.get_job(&job_id);
+    assert_eq!(job.status, JobStatus::Completed);
+}
+
+#[test]
+fn test_no_event_emitted_on_failed_transaction() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let (contract, client_addr, freelancer, token, _admin) = setup_test(&env);
+
+    let milestones = vec![
+        &env,
+        (String::from_str(&env, "Task 1"), 1000_i128, JOB_DEADLINE),
+    ];
+
+    let job_id = contract.create_job(
+        &client_addr,
+        &freelancer,
+        &token,
+        &milestones,
+        &JOB_DEADLINE,
+        &GRACE_PERIOD,
+    );
+
+    // Count events before failed operation
+    let events_before = env.events().all();
+    let count_before = events_before.len();
+
+    // Try to approve milestone without funding first (should fail)
+    let result = contract.try_approve_milestone(&job_id, &0, &client_addr);
+    assert!(result.is_err());
+
+    // Count events after failed operation
+    let events_after = env.events().all();
+    let count_after = events_after.len();
+
+    // No new events should be emitted on failed transaction
+    assert_eq!(count_before, count_after);
+}
+
+#[test]
+fn test_event_order_matches_transition_order() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let (contract, client_addr, freelancer, token, _admin) = setup_test(&env);
+
+    let milestones = vec![
+        &env,
+        (String::from_str(&env, "Task 1"), 500_i128, JOB_DEADLINE),
+        (String::from_str(&env, "Task 2"), 500_i128, JOB_DEADLINE),
+    ];
+
+    // Transition 1: Create job
+    let job_id = contract.create_job(
+        &client_addr,
+        &freelancer,
+        &token,
+        &milestones,
+        &JOB_DEADLINE,
+        &GRACE_PERIOD,
+    );
+
+    // Transition 2: Fund job
+    contract.fund_job(&job_id, &client_addr);
+
+    // Transition 3: Submit milestone
+    contract.submit_milestone(&job_id, &0, &freelancer);
+
+    // Transition 4: Approve milestone
+    contract.approve_milestone(&job_id, &0, &client_addr);
+
+    // Transition 5: Submit second milestone
+    contract.submit_milestone(&job_id, &1, &freelancer);
+
+    // Transition 6: Approve second milestone (completes job)
+    contract.approve_milestone(&job_id, &1, &client_addr);
+
+    // Read all events
+    let events = env.events().all();
+
+    // Find key events in order by checking topic1
+    let mut created_idx: Option<usize> = None;
+    let mut funded_idx: Option<usize> = None;
+    let mut pmt_released_idx: Option<usize> = None;
+
+    for (i, event) in events.iter().enumerate() {
+        if event.0 == contract.address && event.1.len() >= 2 {
+            let topic1: Symbol = event.1.get(1).unwrap().into_val(&env);
+            if topic1 == symbol_short!("created") && created_idx.is_none() {
+                created_idx = Some(i);
+            } else if topic1 == symbol_short!("funded") && funded_idx.is_none() {
+                funded_idx = Some(i);
+            } else if topic1 == Symbol::new(&env, "pmt_released") && pmt_released_idx.is_none() {
+                pmt_released_idx = Some(i);
+            }
+        }
+    }
+
+    let created_idx = created_idx.expect("created event should exist");
+    let funded_idx = funded_idx.expect("funded event should exist");
+    let pmt_released_idx = pmt_released_idx.expect("pmt_released event should exist");
+
+    // Assert chronological order
+    assert!(
+        created_idx < funded_idx,
+        "created should come before funded"
+    );
+    assert!(
+        funded_idx < pmt_released_idx,
+        "funded should come before pmt_released"
+    );
+}
