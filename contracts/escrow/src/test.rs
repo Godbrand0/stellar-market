@@ -4362,3 +4362,351 @@ fn test_event_order_matches_transition_order() {
         "funded should come before pmt_released"
     );
 }
+
+#[test]
+fn test_multi_token_usdc_workflow() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let contract_id = env.register_contract(None, EscrowContract);
+    let contract = EscrowContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let signers = vec![&env, admin.clone()];
+    let treasury = Address::generate(&env);
+
+    contract.initialize(&signers, &1, &treasury, &0, &604800);
+
+    let usdc_token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let usdc_admin = StellarAssetClient::new(&env, &usdc_token);
+
+    contract.add_allowed_token(&admin, &usdc_token).unwrap();
+
+    let client = Address::generate(&env);
+    let freelancer = Address::generate(&env);
+    usdc_admin.mint(&client, &1_000_000_000);
+
+    let milestones = vec![
+        &env,
+        (String::from_str(&env, "USDC Task 1"), 100_000_i128, JOB_DEADLINE),
+        (
+            String::from_str(&env, "USDC Task 2"),
+            200_000_i128,
+            JOB_DEADLINE,
+        ),
+    ];
+
+    let job_id = contract
+        .create_job(&client, &freelancer, &usdc_token, &milestones, &JOB_DEADLINE, &GRACE_PERIOD)
+        .unwrap();
+
+    let job = contract.get_job(&job_id);
+    assert_eq!(job.token, usdc_token);
+    assert_eq!(job.total_amount, 300_000);
+
+    contract.fund_job(&job_id, &client).unwrap();
+
+    contract.submit_milestone(&job_id, &0, &freelancer).unwrap();
+    contract.approve_milestone(&job_id, &0, &client).unwrap();
+
+    contract.submit_milestone(&job_id, &1, &freelancer).unwrap();
+    contract.approve_milestone(&job_id, &1, &client).unwrap();
+
+    let final_job = contract.get_job(&job_id);
+    assert_eq!(final_job.status, JobStatus::Completed);
+    assert_eq!(final_job.token, usdc_token);
+}
+
+#[test]
+fn test_multi_token_xlm_workflow() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let contract_id = env.register_contract(None, EscrowContract);
+    let contract = EscrowContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let signers = vec![&env, admin.clone()];
+    let treasury = Address::generate(&env);
+
+    contract.initialize(&signers, &1, &treasury, &0, &604800);
+
+    let xlm_token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let xlm_admin = StellarAssetClient::new(&env, &xlm_token);
+
+    contract.add_allowed_token(&admin, &xlm_token).unwrap();
+
+    let client = Address::generate(&env);
+    let freelancer = Address::generate(&env);
+    xlm_admin.mint(&client, &5_000_000_000);
+
+    let milestones = vec![
+        &env,
+        (String::from_str(&env, "XLM Task 1"), 1_000_000_i128, JOB_DEADLINE),
+        (
+            String::from_str(&env, "XLM Task 2"),
+            2_000_000_i128,
+            JOB_DEADLINE,
+        ),
+    ];
+
+    let job_id = contract
+        .create_job(&client, &freelancer, &xlm_token, &milestones, &JOB_DEADLINE, &GRACE_PERIOD)
+        .unwrap();
+
+    let job = contract.get_job(&job_id);
+    assert_eq!(job.token, xlm_token);
+    assert_eq!(job.total_amount, 3_000_000);
+
+    contract.fund_job(&job_id, &client).unwrap();
+
+    contract.submit_milestone(&job_id, &0, &freelancer).unwrap();
+    contract.approve_milestone(&job_id, &0, &client).unwrap();
+
+    contract.submit_milestone(&job_id, &1, &freelancer).unwrap();
+    contract.approve_milestone(&job_id, &1, &client).unwrap();
+
+    let final_job = contract.get_job(&job_id);
+    assert_eq!(final_job.status, JobStatus::Completed);
+    assert_eq!(final_job.token, xlm_token);
+}
+
+#[test]
+fn test_multi_token_concurrent_jobs() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let contract_id = env.register_contract(None, EscrowContract);
+    let contract = EscrowContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let signers = vec![&env, admin.clone()];
+    let treasury = Address::generate(&env);
+
+    contract.initialize(&signers, &1, &treasury, &0, &604800);
+
+    let usdc_token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let xlm_token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+
+    let usdc_admin = StellarAssetClient::new(&env, &usdc_token);
+    let xlm_admin = StellarAssetClient::new(&env, &xlm_token);
+
+    contract.add_allowed_token(&admin, &usdc_token).unwrap();
+    contract.add_allowed_token(&admin, &xlm_token).unwrap();
+
+    let client1 = Address::generate(&env);
+    let client2 = Address::generate(&env);
+    let freelancer1 = Address::generate(&env);
+    let freelancer2 = Address::generate(&env);
+
+    usdc_admin.mint(&client1, &1_000_000);
+    xlm_admin.mint(&client2, &5_000_000);
+
+    let milestones1 = vec![
+        &env,
+        (String::from_str(&env, "USDC Task"), 500_000_i128, JOB_DEADLINE),
+    ];
+
+    let milestones2 = vec![
+        &env,
+        (String::from_str(&env, "XLM Task"), 2_000_000_i128, JOB_DEADLINE),
+    ];
+
+    let job_id1 = contract
+        .create_job(
+            &client1,
+            &freelancer1,
+            &usdc_token,
+            &milestones1,
+            &JOB_DEADLINE,
+            &GRACE_PERIOD,
+        )
+        .unwrap();
+
+    let job_id2 = contract
+        .create_job(
+            &client2,
+            &freelancer2,
+            &xlm_token,
+            &milestones2,
+            &JOB_DEADLINE,
+            &GRACE_PERIOD,
+        )
+        .unwrap();
+
+    let job1 = contract.get_job(&job_id1);
+    let job2 = contract.get_job(&job_id2);
+
+    assert_eq!(job1.token, usdc_token);
+    assert_eq!(job2.token, xlm_token);
+    assert_ne!(job1.token, job2.token);
+
+    contract.fund_job(&job_id1, &client1).unwrap();
+    contract.fund_job(&job_id2, &client2).unwrap();
+
+    contract.submit_milestone(&job_id1, &0, &freelancer1).unwrap();
+    contract.submit_milestone(&job_id2, &0, &freelancer2).unwrap();
+
+    contract.approve_milestone(&job_id1, &0, &client1).unwrap();
+    contract.approve_milestone(&job_id2, &0, &client2).unwrap();
+
+    let final_job1 = contract.get_job(&job_id1);
+    let final_job2 = contract.get_job(&job_id2);
+
+    assert_eq!(final_job1.status, JobStatus::Completed);
+    assert_eq!(final_job2.status, JobStatus::Completed);
+    assert_eq!(final_job1.token, usdc_token);
+    assert_eq!(final_job2.token, xlm_token);
+}
+
+#[test]
+fn test_token_allowlist_enforcement() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let contract_id = env.register_contract(None, EscrowContract);
+    let contract = EscrowContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let signers = vec![&env, admin.clone()];
+    let treasury = Address::generate(&env);
+
+    contract.initialize(&signers, &1, &treasury, &0, &604800);
+
+    let allowed_token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let disallowed_token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+
+    contract.add_allowed_token(&admin, &allowed_token).unwrap();
+
+    let client = Address::generate(&env);
+    let freelancer = Address::generate(&env);
+
+    let allowed_admin = StellarAssetClient::new(&env, &allowed_token);
+    let disallowed_admin = StellarAssetClient::new(&env, &disallowed_token);
+
+    allowed_admin.mint(&client, &1_000_000);
+    disallowed_admin.mint(&client, &1_000_000);
+
+    let milestones = vec![
+        &env,
+        (String::from_str(&env, "Task"), 100_000_i128, JOB_DEADLINE),
+    ];
+
+    let allowed_result = contract.try_create_job(
+        &client,
+        &freelancer,
+        &allowed_token,
+        &milestones,
+        &JOB_DEADLINE,
+        &GRACE_PERIOD,
+    );
+    assert!(allowed_result.is_ok());
+
+    let disallowed_result = contract.try_create_job(
+        &client,
+        &freelancer,
+        &disallowed_token,
+        &milestones,
+        &JOB_DEADLINE,
+        &GRACE_PERIOD,
+    );
+    assert!(disallowed_result.is_err());
+    let error = disallowed_result.unwrap_err();
+    assert_eq!(error, Ok(EscrowError::TokenNotAllowed));
+}
+
+#[test]
+fn test_allowed_tokens_getter() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let contract_id = env.register_contract(None, EscrowContract);
+    let contract = EscrowContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let signers = vec![&env, admin.clone()];
+    let treasury = Address::generate(&env);
+
+    contract.initialize(&signers, &1, &treasury, &0, &604800);
+
+    let token1 = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let token2 = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+
+    let initial_tokens = contract.get_allowed_tokens();
+    assert_eq!(initial_tokens.len(), 0);
+
+    contract.add_allowed_token(&admin, &token1).unwrap();
+    let tokens_after_first = contract.get_allowed_tokens();
+    assert_eq!(tokens_after_first.len(), 1);
+    assert_eq!(tokens_after_first.get(0).unwrap(), token1);
+
+    contract.add_allowed_token(&admin, &token2).unwrap();
+    let tokens_after_second = contract.get_allowed_tokens();
+    assert_eq!(tokens_after_second.len(), 2);
+    assert_eq!(tokens_after_second.get(0).unwrap(), token1);
+    assert_eq!(tokens_after_second.get(1).unwrap(), token2);
+
+    contract.remove_allowed_token(&admin, &token1).unwrap();
+    let tokens_after_removal = contract.get_allowed_tokens();
+    assert_eq!(tokens_after_removal.len(), 1);
+    assert_eq!(tokens_after_removal.get(0).unwrap(), token2);
+}
+
+#[test]
+fn test_admin_token_management() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let contract_id = env.register_contract(None, EscrowContract);
+    let contract = EscrowContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+    let signers = vec![&env, admin.clone()];
+    let treasury = Address::generate(&env);
+
+    contract.initialize(&signers, &1, &treasury, &0, &604800);
+
+    let token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+
+    contract.add_allowed_token(&admin, &token).unwrap();
+
+    let add_by_non_admin = contract.try_add_allowed_token(&non_admin, &token);
+    assert!(add_by_non_admin.is_err());
+    assert_eq!(add_by_non_admin.unwrap_err(), Ok(EscrowError::NotAdmin));
+
+    let remove_by_non_admin = contract.try_remove_allowed_token(&non_admin, &token);
+    assert!(remove_by_non_admin.is_err());
+    assert_eq!(
+        remove_by_non_admin.unwrap_err(),
+        Ok(EscrowError::NotAdmin)
+    );
+
+    contract.remove_allowed_token(&admin, &token).unwrap();
+    let tokens = contract.get_allowed_tokens();
+    assert_eq!(tokens.len(), 0);
+}
