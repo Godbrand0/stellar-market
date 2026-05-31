@@ -18,6 +18,7 @@ impl MockToken {
 const GRACE_PERIOD: u64 = 604_800; // 7 days in seconds
 const MIN_STAKE: i128 = 10_000_000;
 const JOB_DEADLINE: u64 = 1_000_000; // Example value
+const DEFAULT_EXPIRY_LEDGER: u32 = 518_400; // 30 days in ledgers (17,280 ledgers/day * 30)
 
 // Correction 3: token_address is already Address from register_stellar_asset_contract_v2,
 // so we use it directly without calling .address() on it.
@@ -132,6 +133,7 @@ fn test_create_job() {
         &milestones,
         &JOB_DEADLINE, // job_deadline must be >= all milestone deadlines
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
     assert_eq!(job_id, 1);
 
@@ -165,6 +167,7 @@ fn test_extend_deadline_emits_event() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     let new_deadline = JOB_DEADLINE + 1000;
@@ -227,6 +230,7 @@ fn test_job_count_increments() {
         &milestones,
         &JOB_DEADLINE, // job_deadline must be >= milestone deadlines
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
     let id2 = contract.create_job(
         &user,
@@ -235,6 +239,7 @@ fn test_job_count_increments() {
         &milestones,
         &JOB_DEADLINE, // job_deadline must be >= milestone deadlines
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     assert_eq!(id1, 1);
@@ -263,6 +268,7 @@ fn test_create_job_invalid_deadline() {
         &milestones,
         &2000_u64,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
 }
 
@@ -284,6 +290,7 @@ fn test_create_job_empty_milestones() {
         &milestones,
         &2000_u64,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 }
 
@@ -308,6 +315,7 @@ fn test_create_job_too_many_milestones() {
         &milestones,
         &3000_u64,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 }
 
@@ -334,6 +342,7 @@ fn test_submit_milestone_past_deadline() {
         &milestones,
         &3000_u64,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
     client.fund_job(&job_id, &user);
 
@@ -365,6 +374,7 @@ fn test_is_milestone_overdue() {
         &milestones,
         &3000_u64,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     // not overdue initially
@@ -399,6 +409,7 @@ fn test_extend_deadline() {
         &milestones,
         &3000_u64,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     client.extend_deadline(&job_id, &0, &4000_u64);
@@ -460,6 +471,7 @@ fn test_claim_refund_full() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client, expected_total);
@@ -501,6 +513,7 @@ fn test_claim_refund_partial() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client, total);
@@ -545,6 +558,7 @@ fn test_claim_refund_in_progress_status() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client, 3000);
@@ -584,6 +598,7 @@ fn test_claim_refund_fails_before_grace_period() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client, 3000);
@@ -614,6 +629,7 @@ fn test_claim_refund_fails_with_pending_milestone() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client, 3000);
@@ -648,6 +664,7 @@ fn test_claim_refund_fails_unauthorized() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client, 3000);
@@ -689,6 +706,7 @@ fn test_claim_refund_fails_on_completed_job() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client, task_amount);
@@ -727,6 +745,7 @@ fn test_claim_refund_fails_on_cancelled_job() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client, 3000);
@@ -763,6 +782,7 @@ fn test_client_can_propose_revision() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     // Correction 4: Use named amounts for dynamic assertions
@@ -815,6 +835,7 @@ fn test_freelancer_can_propose_revision() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     let m0_amount: i128 = 1500;
@@ -856,6 +877,7 @@ fn test_propose_revision_fails_for_disputed_job() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     env.as_contract(&contract.address, || {
@@ -897,6 +919,7 @@ fn test_approve_milestone_fails_for_disputed_job() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     // Mocking job status to Disputed
@@ -928,6 +951,7 @@ fn test_submit_milestone_fails_for_disputed_job() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     // Mocking job status to Disputed
@@ -959,6 +983,7 @@ fn test_approve_milestones_batch_fails_for_disputed_job() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     // Mocking job status to Disputed
@@ -991,6 +1016,7 @@ fn test_propose_revision_fails_for_non_party() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     let new_milestones = vec![
@@ -1024,6 +1050,7 @@ fn test_propose_revision_fails_when_pending_proposal_exists() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     let new_milestones = vec![
@@ -1058,6 +1085,7 @@ fn test_propose_revision_too_many_milestones() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     let mut new_milestones = vec![&env];
@@ -1090,6 +1118,7 @@ fn test_propose_revision_allowed_after_rejection() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     let new_milestones = vec![
@@ -1131,6 +1160,7 @@ fn test_propose_revision_fails_for_empty_milestones() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     let empty_milestones: Vec<Milestone> = vec![&env];
@@ -1154,6 +1184,7 @@ fn test_propose_revision_new_total_equals_sum_of_milestones() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     // Correction 4: Dynamic sum
@@ -1207,6 +1238,7 @@ fn test_accept_revision_same_total_updates_milestones_only() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
     contract.fund_job(&job_id, &client);
 
@@ -1271,6 +1303,7 @@ fn test_accept_revision_with_increased_total_transfers_difference_from_client() 
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
     contract.fund_job(&job_id, &client);
 
@@ -1322,6 +1355,7 @@ fn test_accept_revision_with_decreased_total_refunds_difference_to_client() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
     contract.fund_job(&job_id, &client);
 
@@ -1367,6 +1401,7 @@ fn test_reject_revision_sets_status_to_rejected() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     let new_milestones = vec![
@@ -1411,6 +1446,7 @@ fn test_proposer_cannot_accept_own_proposal() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     let new_milestones = vec![
@@ -1444,6 +1480,7 @@ fn test_propose_revision_emits_event() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     let new_milestones = vec![
@@ -1481,6 +1518,7 @@ fn test_accept_revision_emits_event() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
     contract.fund_job(&job_id, &client);
 
@@ -1520,6 +1558,7 @@ fn test_cancel_revision_proposal_happy_path() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     let new_milestones = vec![
@@ -1558,6 +1597,7 @@ fn test_freelancer_can_cancel_own_revision_proposal() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     let new_milestones = vec![
@@ -1596,6 +1636,7 @@ fn test_cancel_revision_fails_for_non_proposer() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     let new_milestones = vec![
@@ -1633,6 +1674,7 @@ fn test_cancel_revision_fails_for_third_party() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     let new_milestones = vec![
@@ -1669,6 +1711,7 @@ fn test_cancel_revision_fails_when_already_accepted() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
     contract.fund_job(&job_id, &client);
 
@@ -1707,6 +1750,7 @@ fn test_cancel_revision_fails_when_already_rejected() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     let new_milestones = vec![
@@ -1743,6 +1787,7 @@ fn test_cancel_revision_proposal_clears_slot_for_new_proposal() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     let new_milestones = vec![
@@ -1784,6 +1829,7 @@ fn test_cancel_revision_proposal_emits_event() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     let new_milestones = vec![
@@ -1824,6 +1870,7 @@ fn test_resolve_dispute_callback_client_wins() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client, total);
@@ -1856,6 +1903,7 @@ fn test_resolve_dispute_callback_freelancer_wins() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client, total);
@@ -1890,6 +1938,7 @@ fn test_resolve_dispute_callback_refund_both() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client, total);
@@ -1942,6 +1991,7 @@ fn test_pause_and_unpause() {
         &milestones,
         &2500_u64,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
     assert_eq!(job_id, 1);
 
@@ -1961,6 +2011,7 @@ fn test_pause_and_unpause() {
         &milestones2,
         &JOB_DEADLINE, // job_deadline
         &2500_u64,     // auto_refund_after
+        &DEFAULT_EXPIRY_LEDGER,
     );
     assert_eq!(job_id2, 2);
 }
@@ -1990,6 +2041,7 @@ fn test_create_job_when_paused() {
         &milestones,
         &2500_u64,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
 }
 
@@ -2017,6 +2069,7 @@ fn test_fund_job_when_paused() {
         &milestones,
         &2500_u64,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     pause_escrow(&env, &client, &admin);
@@ -2048,6 +2101,7 @@ fn test_fund_job_rejects_non_client_caller() {
         &milestones,
         &2500_u64,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     client.fund_job(&job_id, &attacker);
@@ -2077,6 +2131,7 @@ fn test_submit_milestone_when_paused() {
         &milestones,
         &2500_u64,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     client.fund_job(&job_id, &user);
@@ -2108,6 +2163,7 @@ fn test_approve_milestone_when_paused() {
         &milestones,
         &2500_u64,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     client.fund_job(&job_id, &user);
@@ -2140,6 +2196,7 @@ fn test_claim_refund_when_paused() {
         &milestones,
         &2500_u64,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     client.fund_job(&job_id, &user);
@@ -2176,6 +2233,7 @@ fn test_extend_deadline_when_paused() {
         &milestones,
         &2500_u64,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     pause_escrow(&env, &client, &admin);
@@ -2209,6 +2267,7 @@ fn test_read_only_functions_when_paused() {
         &milestones,
         &2_000_000_u64,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     pause_escrow(&env, &client, &admin);
@@ -2263,6 +2322,7 @@ fn test_approve_milestones_batch_happy_path() {
         &milestones,
         &5000_u64,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client, total);
@@ -2327,6 +2387,7 @@ fn test_approve_milestones_batch_partial_invalid() {
         &milestones,
         &5000_u64,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client, total);
@@ -2372,6 +2433,7 @@ fn test_approve_milestones_batch_unauthorized_caller() {
         &milestones,
         &5000_u64,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client, 1000);
@@ -2412,6 +2474,7 @@ fn test_approve_milestones_batch_non_existent_index() {
         &milestones,
         &5000_u64,
         &GRACE_PERIOD, // Correction 5
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client, 1000);
@@ -2504,6 +2567,7 @@ fn test_fee_deduction_single_approval() {
         &milestones,
         &3000_u64,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client_addr, milestone_amount);
@@ -2564,6 +2628,7 @@ fn test_fee_deduction_batch_approval() {
         &milestones,
         &5000_u64,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client_addr, total);
@@ -2631,6 +2696,7 @@ fn test_fund_job_underfunding_rejected() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     // Corrupt total_amount to 50 — less than the milestone sum of 100
@@ -2675,6 +2741,7 @@ fn test_fund_job_overfunding_rejected() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     // Corrupt total_amount to 150 — more than the milestone sum of 100
@@ -2708,6 +2775,7 @@ fn test_expire_job_happy_path() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client, total);
@@ -2750,6 +2818,7 @@ fn test_expire_job_partial_refund_after_approved_milestone() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client, total);
@@ -2790,6 +2859,7 @@ fn test_expire_job_premature_call_fails() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client, 3000);
@@ -2822,6 +2892,7 @@ fn test_expire_job_already_completed_fails() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client, amount);
@@ -2855,6 +2926,7 @@ fn test_expire_job_already_cancelled_fails() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     mint_tokens(&env, &token, &client, 3000);
@@ -2889,6 +2961,7 @@ fn test_payment_released_event_emitted_on_last_milestone_approval() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     contract.fund_job(&job_id, &client_addr);
@@ -2933,6 +3006,7 @@ fn test_payment_released_event_not_emitted_on_partial_approval() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     contract.fund_job(&job_id, &client_addr);
@@ -2974,6 +3048,7 @@ fn test_payment_released_event_emitted_via_batch_approval() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     contract.fund_job(&job_id, &client_addr);
@@ -3078,6 +3153,7 @@ fn test_release_partial_payment_happy_path() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     contract.fund_job(&job_id, &client_addr);
@@ -3112,6 +3188,7 @@ fn test_release_partial_payment_fully_zeros_becomes_approved() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     contract.fund_job(&job_id, &client_addr);
@@ -3147,6 +3224,7 @@ fn test_release_partial_then_full_remainder() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     contract.fund_job(&job_id, &client_addr);
@@ -3186,6 +3264,7 @@ fn test_release_partial_payment_amount_zero_rejected() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     contract.fund_job(&job_id, &client_addr);
@@ -3212,6 +3291,7 @@ fn test_release_partial_payment_amount_exceeds_milestone_rejected() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     contract.fund_job(&job_id, &client_addr);
@@ -3239,6 +3319,7 @@ fn test_release_partial_payment_wrong_status_rejected() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     contract.fund_job(&job_id, &client_addr);
@@ -3265,6 +3346,7 @@ fn test_release_partial_payment_unauthorized_rejected() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     contract.fund_job(&job_id, &client_addr);
@@ -3368,6 +3450,7 @@ fn test_top_up_escrow_partial_top_up() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     contract.fund_job(&job_id, &client);
@@ -3414,6 +3497,7 @@ fn test_top_up_escrow_completing_funding() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     contract.fund_job(&job_id, &client);
@@ -3460,6 +3544,7 @@ fn test_top_up_escrow_overfund_rejection() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
     contract.fund_job(&job_id, &client);
 
@@ -3489,6 +3574,7 @@ fn test_top_up_escrow_emits_event() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
     contract.fund_job(&job_id, &client);
 
@@ -3533,6 +3619,7 @@ fn test_bump_escrow_extends_ttl_for_existing_escrow() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     // Call bump_escrow - should succeed without error
@@ -3577,6 +3664,7 @@ fn test_bump_escrow_is_permissionless() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     // Generate a random third-party address
@@ -3612,6 +3700,7 @@ fn test_bump_escrow_for_completed_escrow() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     // Setup token for funding
@@ -3657,6 +3746,7 @@ fn test_bump_escrow_for_cancelled_escrow() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     // Setup token for funding
@@ -3698,6 +3788,7 @@ fn test_bump_escrow_for_expired_escrow() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     // Setup token for funding
@@ -3744,6 +3835,7 @@ fn test_create_job_extends_ttl() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     // Verify the job is readable (TTL was extended during creation)
@@ -3771,6 +3863,7 @@ fn test_fund_job_extends_ttl() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     // Setup token for funding
@@ -3804,6 +3897,7 @@ fn test_submit_milestone_extends_ttl() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     // Setup token for funding
@@ -3841,6 +3935,7 @@ fn test_approve_milestone_extends_ttl() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     // Setup token for funding
@@ -3876,6 +3971,7 @@ fn test_propose_revision_extends_ttl() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     let new_milestones = vec![
@@ -3917,6 +4013,7 @@ fn test_extend_deadline_extends_ttl() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     let new_deadline = JOB_DEADLINE + 10000;
@@ -3970,6 +4067,7 @@ fn test_escrow_created_event_emitted_with_correct_data() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     // Read emitted events
@@ -4014,6 +4112,7 @@ fn test_escrow_funded_event_emitted_with_correct_data() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     contract.fund_job(&job_id, &client_addr);
@@ -4061,6 +4160,7 @@ fn test_milestone_released_event_emitted_with_correct_data() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     contract.fund_job(&job_id, &client_addr);
@@ -4120,6 +4220,7 @@ fn test_escrow_refunded_event_emitted_with_correct_data() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     contract.fund_job(&job_id, &client_addr);
@@ -4171,6 +4272,7 @@ fn test_escrow_disputed_event_emitted_with_correct_data() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     contract.fund_job(&job_id, &client_addr);
@@ -4220,6 +4322,7 @@ fn test_escrow_completed_event_emitted_with_correct_data() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     contract.fund_job(&job_id, &client_addr);
@@ -4270,6 +4373,7 @@ fn test_no_event_emitted_on_failed_transaction() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     // Count events before failed operation
@@ -4310,6 +4414,7 @@ fn test_event_order_matches_transition_order() {
         &milestones,
         &JOB_DEADLINE,
         &GRACE_PERIOD,
+        &DEFAULT_EXPIRY_LEDGER,
     );
 
     // Transition 2: Fund job
@@ -4361,4 +4466,295 @@ fn test_event_order_matches_transition_order() {
         funded_idx < pmt_released_idx,
         "funded should come before pmt_released"
     );
+}
+
+// ── claim_expired tests ───────────────────────────────────────────────────────
+
+#[test]
+fn test_claim_expired_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    
+    let (escrow, token) = setup_refund_env(&env);
+    
+    let client = Address::generate(&env);
+    let freelancer = Address::generate(&env);
+    let milestones = default_milestones(&env);
+    
+    // Set expiry_ledger to 100
+    let expiry_ledger = 100u32;
+    let job_id = escrow.create_job(
+        &client,
+        &freelancer,
+        &token,
+        &milestones,
+        &JOB_DEADLINE,
+        &GRACE_PERIOD,
+        &expiry_ledger,
+    );
+    
+    let total: i128 = 500 + 1000 + 1500;
+    mint_tokens(&env, &token, &client, total);
+    escrow.fund_job(&job_id, &client);
+    
+    // Advance ledger past expiry_ledger
+    env.ledger().with_mut(|l| l.sequence_number = expiry_ledger + 1);
+    
+    // Claim expired - should succeed
+    escrow.claim_expired(&job_id);
+    
+    // Verify job status is Expired
+    let job = escrow.get_job(&job_id);
+    assert_eq!(job.status, JobStatus::Expired);
+    
+    // Verify client received refund
+    let token_client = TokenClient::new(&env, &token);
+    assert_eq!(token_client.balance(&client), total);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #40)")] // ExpiryNotPassed
+fn test_claim_expired_fails_before_expiry() {
+    let env = Env::default();
+    env.mock_all_auths();
+    
+    let (escrow, token) = setup_refund_env(&env);
+    
+    let client = Address::generate(&env);
+    let freelancer = Address::generate(&env);
+    let milestones = default_milestones(&env);
+    
+    // Set expiry_ledger to 100
+    let expiry_ledger = 100u32;
+    let job_id = escrow.create_job(
+        &client,
+        &freelancer,
+        &token,
+        &milestones,
+        &JOB_DEADLINE,
+        &GRACE_PERIOD,
+        &expiry_ledger,
+    );
+    
+    let total: i128 = 500 + 1000 + 1500;
+    mint_tokens(&env, &token, &client, total);
+    escrow.fund_job(&job_id, &client);
+    
+    // Ledger sequence is still before expiry_ledger
+    env.ledger().with_mut(|l| l.sequence_number = expiry_ledger - 1);
+    
+    // Claim expired - should fail
+    escrow.claim_expired(&job_id);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")] // InvalidStatus
+fn test_claim_expired_fails_on_completed_job() {
+    let env = Env::default();
+    env.mock_all_auths();
+    
+    let (escrow, token) = setup_refund_env(&env);
+    
+    let client = Address::generate(&env);
+    let freelancer = Address::generate(&env);
+    let milestones = default_milestones(&env);
+    
+    let expiry_ledger = 100u32;
+    let job_id = escrow.create_job(
+        &client,
+        &freelancer,
+        &token,
+        &milestones,
+        &JOB_DEADLINE,
+        &GRACE_PERIOD,
+        &expiry_ledger,
+    );
+    
+    let total: i128 = 500 + 1000 + 1500;
+    mint_tokens(&env, &token, &client, total);
+    escrow.fund_job(&job_id, &client);
+    
+    // Complete the job
+    escrow.submit_milestone(&job_id, &0, &freelancer);
+    escrow.approve_milestone(&job_id, &0, &client);
+    escrow.submit_milestone(&job_id, &1, &freelancer);
+    escrow.approve_milestone(&job_id, &1, &client);
+    escrow.submit_milestone(&job_id, &2, &freelancer);
+    escrow.approve_milestone(&job_id, &2, &client);
+    
+    // Advance ledger past expiry
+    env.ledger().with_mut(|l| l.sequence_number = expiry_ledger + 1);
+    
+    // Claim expired - should fail (job is Completed)
+    escrow.claim_expired(&job_id);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")] // InvalidStatus
+fn test_claim_expired_fails_on_cancelled_job() {
+    let env = Env::default();
+    env.mock_all_auths();
+    
+    let (escrow, token) = setup_refund_env(&env);
+    
+    let client = Address::generate(&env);
+    let freelancer = Address::generate(&env);
+    let milestones = default_milestones(&env);
+    
+    let expiry_ledger = 100u32;
+    let job_id = escrow.create_job(
+        &client,
+        &freelancer,
+        &token,
+        &milestones,
+        &JOB_DEADLINE,
+        &GRACE_PERIOD,
+        &expiry_ledger,
+    );
+    
+    let total: i128 = 500 + 1000 + 1500;
+    mint_tokens(&env, &token, &client, total);
+    escrow.fund_job(&job_id, &client);
+    
+    // Cancel the job
+    escrow.cancel_job(&job_id, &client);
+    
+    // Advance ledger past expiry
+    env.ledger().with_mut(|l| l.sequence_number = expiry_ledger + 1);
+    
+    // Claim expired - should fail (job is Cancelled)
+    escrow.claim_expired(&job_id);
+}
+
+#[test]
+fn test_claim_expired_with_approved_milestones() {
+    let env = Env::default();
+    env.mock_all_auths();
+    
+    let (escrow, token) = setup_refund_env(&env);
+    
+    let client = Address::generate(&env);
+    let freelancer = Address::generate(&env);
+    let milestones = default_milestones(&env);
+    
+    let expiry_ledger = 100u32;
+    let job_id = escrow.create_job(
+        &client,
+        &freelancer,
+        &token,
+        &milestones,
+        &JOB_DEADLINE,
+        &GRACE_PERIOD,
+        &expiry_ledger,
+    );
+    
+    let total: i128 = 500 + 1000 + 1500;
+    mint_tokens(&env, &token, &client, total);
+    escrow.fund_job(&job_id, &client);
+    
+    // Approve first milestone (500)
+    escrow.submit_milestone(&job_id, &0, &freelancer);
+    escrow.approve_milestone(&job_id, &0, &client);
+    
+    // Advance ledger past expiry
+    env.ledger().with_mut(|l| l.sequence_number = expiry_ledger + 1);
+    
+    // Claim expired - should refund remaining amount (total - approved)
+    escrow.claim_expired(&job_id);
+    
+    // Verify job status is Expired
+    let job = escrow.get_job(&job_id);
+    assert_eq!(job.status, JobStatus::Expired);
+    
+    // Verify client received refund for unapproved milestones (1000 + 1500 = 2500)
+    let token_client = TokenClient::new(&env, &token);
+    assert_eq!(token_client.balance(&client), 2500);
+    
+    // Verify freelancer received approved milestone amount (500)
+    assert_eq!(token_client.balance(&freelancer), 500);
+}
+
+#[test]
+fn test_claim_expired_emits_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+    
+    let (escrow, token) = setup_refund_env(&env);
+    
+    let client = Address::generate(&env);
+    let freelancer = Address::generate(&env);
+    let milestones = default_milestones(&env);
+    
+    let expiry_ledger = 100u32;
+    let job_id = escrow.create_job(
+        &client,
+        &freelancer,
+        &token,
+        &milestones,
+        &JOB_DEADLINE,
+        &GRACE_PERIOD,
+        &expiry_ledger,
+    );
+    
+    let total: i128 = 500 + 1000 + 1500;
+    mint_tokens(&env, &token, &client, total);
+    escrow.fund_job(&job_id, &client);
+    
+    // Advance ledger past expiry
+    env.ledger().with_mut(|l| l.sequence_number = expiry_ledger + 1);
+    
+    // Claim expired
+    escrow.claim_expired(&job_id);
+    
+    // Verify EscrowExpired event was emitted
+    let events = env.events().all();
+    let expired_event = events.last().expect("EscrowExpired event should be emitted");
+    
+    // Verify the event topic is "expired"
+    let topic: Symbol = expired_event.1.get(1).unwrap().into_val(&env);
+    assert_eq!(topic, Symbol::new(&env, "expired"));
+    
+    // Verify event data contains job_id, client, refund_amount, and ledger_sequence
+    let event_data: (u64, Address, i128, u32) = expired_event.2.clone().into_val(&env);
+    assert_eq!(event_data.0, job_id);
+    assert_eq!(event_data.1, client);
+    assert_eq!(event_data.2, total);
+    assert_eq!(event_data.3, expiry_ledger + 1);
+}
+
+#[test]
+fn test_claim_expired_permissionless() {
+    let env = Env::default();
+    env.mock_all_auths();
+    
+    let (escrow, token) = setup_refund_env(&env);
+    
+    let client = Address::generate(&env);
+    let freelancer = Address::generate(&env);
+    let milestones = default_milestones(&env);
+    
+    let expiry_ledger = 100u32;
+    let job_id = escrow.create_job(
+        &client,
+        &freelancer,
+        &token,
+        &milestones,
+        &JOB_DEADLINE,
+        &GRACE_PERIOD,
+        &expiry_ledger,
+    );
+    
+    let total: i128 = 500 + 1000 + 1500;
+    mint_tokens(&env, &token, &client, total);
+    escrow.fund_job(&job_id, &client);
+    
+    // Advance ledger past expiry
+    env.ledger().with_mut(|l| l.sequence_number = expiry_ledger + 1);
+    
+    // Claim expired as third party - should succeed (permissionless)
+    escrow.claim_expired(&job_id);
+    
+    // Verify job status is Expired
+    let job = escrow.get_job(&job_id);
+    assert_eq!(job.status, JobStatus::Expired);
 }

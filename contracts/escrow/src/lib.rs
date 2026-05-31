@@ -72,6 +72,8 @@ pub enum EscrowError {
     NoFundsToWithdraw = 38,
     /// Proposal has expired.
     ProposalExpired = 39,
+    /// The escrow expiry ledger has not yet been reached.
+    ExpiryNotPassed = 40,
 }
 
 /// Privileged actions that can be proposed and approved through the multi-sig flow.
@@ -179,6 +181,8 @@ pub struct Job {
     pub milestones: Vec<Milestone>,
     pub job_deadline: u64,
     pub auto_refund_after: u64,
+    /// Ledger number at which the escrow expires and funds can be auto-released.
+    pub expiry_ledger: u32,
 }
 
 const MAX_FEE_BPS: u32 = 1000; // 10%
@@ -735,6 +739,7 @@ impl EscrowContract {
         milestones: Vec<(String, i128, u64)>,
         job_deadline: u64,
         auto_refund_after: u64,
+        expiry_ledger: u32,
     ) -> Result<u64, EscrowError> {
         client.require_auth();
         require_not_paused(&env)?;
@@ -749,6 +754,10 @@ impl EscrowContract {
         }
 
         if job_deadline <= env.ledger().timestamp() {
+            return Err(EscrowError::InvalidDeadline);
+        }
+
+        if expiry_ledger <= env.ledger().sequence() {
             return Err(EscrowError::InvalidDeadline);
         }
 
@@ -798,6 +807,7 @@ impl EscrowContract {
             milestones: milestone_vec,
             job_deadline,
             auto_refund_after,
+            expiry_ledger,
         };
 
         env.storage()
@@ -1838,6 +1848,66 @@ impl EscrowContract {
         env.events().publish(
             (symbol_short!("escrow"), symbol_short!("refund")),
             (job_id, refund, client, job.freelancer),
+        );
+
+        Ok(())
+    }
+
+    /// Claim expired escrow funds when the expiry_ledger has been reached.
+    /// Callable by anyone. Only allows auto-release if the job is in Created, Funded, or InProgress state.
+    /// Returns all escrowed funds to the client and sets job status to Expired.
+    pub fn claim_expired(env: Env, job_id: u64) -> Result<(), EscrowError> {
+        require_not_paused(&env)?;
+
+        let mut job: Job = env
+            .storage()
+            .persistent()
+            .get(&get_job_key(job_id))
+            .ok_or(EscrowError::JobNotFound)?;
+        bump_job_ttl(&env, job_id);
+
+        // Check if expiry_ledger has been reached
+        if env.ledger().sequence() < job.expiry_ledger {
+            return Err(EscrowError::ExpiryNotPassed);
+        }
+
+        // Only allow expiry for jobs that haven't completed or been cancelled
+        if job.status != JobStatus::Created
+            && job.status != JobStatus::Funded
+            && job.status != JobStatus::InProgress
+        {
+            return Err(EscrowError::InvalidStatus);
+        }
+
+        // Calculate refundable amount (total minus already-approved milestones)
+        let approved_amount: i128 = job
+            .milestones
+            .iter()
+            .filter(|m| m.status == MilestoneStatus::Approved)
+            .map(|m| m.amount)
+            .sum();
+
+        let refund_amount = job.total_amount - approved_amount;
+        if refund_amount <= 0 {
+            return Err(EscrowError::NoRefundDue);
+        }
+
+        // Transfer refund to client
+        let token_client = token::Client::new(&env, &job.token);
+        token_client.transfer(
+            &env.current_contract_address(),
+            &job.client,
+            &refund_amount,
+        );
+
+        job.status = JobStatus::Expired;
+        env.storage().persistent().set(&get_job_key(job_id), &job);
+        bump_job_ttl(&env, job_id);
+
+        // Emit EscrowExpired event
+        env.events().publish(
+            (symbol_short!("escrow"), Symbol::new(&env, "expired")),
+            (job_id, job.client.clone(), refund_amount, env.ledger().sequence()),
         );
 
         Ok(())
