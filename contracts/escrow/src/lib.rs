@@ -629,7 +629,6 @@ impl EscrowContract {
         job_deadline: u64,
         auto_refund_after: u64,
     ) -> Result<u64, EscrowError> {
-        client.require_auth();
         require_not_paused(&env)?;
 
         let allowed_tokens = Self::get_allowed_tokens(env.clone());
@@ -640,6 +639,8 @@ impl EscrowContract {
         {
             return Err(EscrowError::TokenNotAllowed);
         }
+
+        client.require_auth();
 
         if job_deadline <= env.ledger().timestamp() {
             return Err(EscrowError::InvalidDeadline);
