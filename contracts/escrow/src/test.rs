@@ -2969,6 +2969,356 @@ fn test_top_up_escrow_emits_event() {
     assert_eq!(topic1, symbol_short!("top_up"));
 }
 
+// ============================================================
+// TOKEN ALLOWLIST TESTS
+// ============================================================
+
+#[test]
+fn test_add_allowed_token() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, _client, _freelancer, token, admin) = setup_test(&env);
+
+    let new_token = Address::generate(&env);
+    contract.add_allowed_token(&admin, &new_token);
+
+    let allowed = contract.get_allowed_tokens();
+    assert_eq!(allowed.len(), 1);
+    assert_eq!(allowed.get(0).unwrap(), new_token);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #16)")]
+fn test_add_allowed_token_non_admin_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, client, freelancer, _token, _admin) = setup_test(&env);
+
+    // freelancer is not a signer — should fail with NotAdmin (#16)
+    let new_token = Address::generate(&env);
+    contract.add_allowed_token(&freelancer, &new_token);
+}
+
+#[test]
+fn test_add_duplicate_token_allowed() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, _client, _freelancer, _token, admin) = setup_test(&env);
+
+    let new_token = Address::generate(&env);
+    contract.add_allowed_token(&admin, &new_token);
+    contract.add_allowed_token(&admin, &new_token); // should be a no-op
+
+    let allowed = contract.get_allowed_tokens();
+    assert_eq!(allowed.len(), 1);
+}
+
+#[test]
+fn test_remove_allowed_token() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, _client, _freelancer, _token, admin) = setup_test(&env);
+
+    let new_token = Address::generate(&env);
+    contract.add_allowed_token(&admin, &new_token);
+    assert_eq!(contract.get_allowed_tokens().len(), 1);
+
+    contract.remove_allowed_token(&admin, &new_token);
+    let allowed = contract.get_allowed_tokens();
+    assert_eq!(allowed.len(), 0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #16)")]
+fn test_remove_allowed_token_non_admin_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, client, freelancer, _token, _admin) = setup_test(&env);
+
+    // freelancer is not a signer — should fail with NotAdmin (#16)
+    let new_token = Address::generate(&env);
+    contract.remove_allowed_token(&freelancer, &new_token);
+}
+
+#[test]
+fn test_remove_non_existent_token_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, _client, _freelancer, _token, admin) = setup_test(&env);
+
+    // Removing a token that was never added should be a no-op success
+    let non_existent = Address::generate(&env);
+    contract.remove_allowed_token(&admin, &non_existent);
+
+    let allowed = contract.get_allowed_tokens();
+    assert_eq!(allowed.len(), 0);
+}
+
+#[test]
+fn test_get_allowed_tokens_empty() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, _client, _freelancer, _token, _admin) = setup_test(&env);
+
+    let allowed = contract.get_allowed_tokens();
+    assert_eq!(allowed.len(), 0);
+}
+
+#[test]
+fn test_get_allowed_tokens_multiple() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, _client, _freelancer, _token, admin) = setup_test(&env);
+
+    let token_a = Address::generate(&env);
+    let token_b = Address::generate(&env);
+    let token_c = Address::generate(&env);
+
+    contract.add_allowed_token(&admin, &token_a);
+    contract.add_allowed_token(&admin, &token_b);
+    contract.add_allowed_token(&admin, &token_c);
+
+    let allowed = contract.get_allowed_tokens();
+    assert_eq!(allowed.len(), 3);
+    assert_eq!(allowed.get(0).unwrap(), token_a);
+    assert_eq!(allowed.get(1).unwrap(), token_b);
+    assert_eq!(allowed.get(2).unwrap(), token_c);
+}
+
+#[test]
+fn test_create_job_with_whitelisted_token_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let (contract, client, freelancer, token, admin) = setup_test(&env);
+
+    // Add the token to the whitelist
+    contract.add_allowed_token(&admin, &token);
+
+    let milestones = vec![&env, (String::from_str(&env, "Work"), 1000_i128, JOB_DEADLINE)];
+    let job_id = contract.create_job(&client, &freelancer, &token, &milestones, &JOB_DEADLINE, &GRACE_PERIOD);
+    assert_eq!(job_id, 1);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_create_job_with_non_whitelisted_token_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let (contract, client, freelancer, token, admin) = setup_test(&env);
+
+    // Register a separate token NOT added to the whitelist
+    let other_token = env.register_stellar_asset_contract_v2(Address::generate(&env)).address();
+
+    // Add original token to whitelist, but not other_token
+    contract.add_allowed_token(&admin, &token);
+
+    let milestones = vec![&env, (String::from_str(&env, "Work"), 1000_i128, JOB_DEADLINE)];
+    contract.create_job(&client, &freelancer, &other_token, &milestones, &JOB_DEADLINE, &GRACE_PERIOD);
+}
+
+#[test]
+fn test_token_validation_happens_before_auth() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, _client, freelancer, token, admin) = setup_test(&env);
+
+    // Add original token to whitelist
+    contract.add_allowed_token(&admin, &token);
+
+    let other_token = Address::generate(&env);
+    let milestones = vec![&env, (String::from_str(&env, "Work"), 1000_i128, JOB_DEADLINE)];
+
+    // This should fail with TokenNotAllowed (#13) BEFORE any auth check
+    let result = contract.try_create_job(
+        &Address::generate(&env),
+        &freelancer,
+        &other_token,
+        &milestones,
+        &JOB_DEADLINE,
+        &GRACE_PERIOD,
+    );
+    // Contract errors are surfaced as Err(Ok(contract_error)) in try_* calls
+    let contract_err = result.err().unwrap().unwrap();
+    assert_eq!(contract_err, EscrowError::TokenNotAllowed);
+}
+
+// ============================================================
+// TOKEN ALLOWLIST TESTS
+// ============================================================
+
+#[test]
+fn test_add_allowed_token() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, _client, _freelancer, token, admin) = setup_test(&env);
+
+    let new_token = Address::generate(&env);
+    contract.add_allowed_token(&admin, &new_token);
+
+    let allowed = contract.get_allowed_tokens();
+    assert_eq!(allowed.len(), 1);
+    assert_eq!(allowed.get(0).unwrap(), new_token);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #16)")]
+fn test_add_allowed_token_non_admin_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, client, freelancer, _token, _admin) = setup_test(&env);
+
+    // freelancer is not a signer — should fail with NotAdmin (#16)
+    let new_token = Address::generate(&env);
+    contract.add_allowed_token(&freelancer, &new_token);
+}
+
+#[test]
+fn test_add_duplicate_token_allowed() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, _client, _freelancer, _token, admin) = setup_test(&env);
+
+    let new_token = Address::generate(&env);
+    contract.add_allowed_token(&admin, &new_token);
+    contract.add_allowed_token(&admin, &new_token); // should be a no-op
+
+    let allowed = contract.get_allowed_tokens();
+    assert_eq!(allowed.len(), 1);
+}
+
+#[test]
+fn test_remove_allowed_token() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, _client, _freelancer, _token, admin) = setup_test(&env);
+
+    let new_token = Address::generate(&env);
+    contract.add_allowed_token(&admin, &new_token);
+    assert_eq!(contract.get_allowed_tokens().len(), 1);
+
+    contract.remove_allowed_token(&admin, &new_token);
+    let allowed = contract.get_allowed_tokens();
+    assert_eq!(allowed.len(), 0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #16)")]
+fn test_remove_allowed_token_non_admin_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, client, freelancer, _token, _admin) = setup_test(&env);
+
+    // freelancer is not a signer — should fail with NotAdmin (#16)
+    let new_token = Address::generate(&env);
+    contract.remove_allowed_token(&freelancer, &new_token);
+}
+
+#[test]
+fn test_remove_non_existent_token_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, _client, _freelancer, _token, admin) = setup_test(&env);
+
+    // Removing a token that was never added should be a no-op success
+    let non_existent = Address::generate(&env);
+    contract.remove_allowed_token(&admin, &non_existent);
+
+    let allowed = contract.get_allowed_tokens();
+    assert_eq!(allowed.len(), 0);
+}
+
+#[test]
+fn test_get_allowed_tokens_empty() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, _client, _freelancer, _token, _admin) = setup_test(&env);
+
+    let allowed = contract.get_allowed_tokens();
+    assert_eq!(allowed.len(), 0);
+}
+
+#[test]
+fn test_get_allowed_tokens_multiple() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, _client, _freelancer, _token, admin) = setup_test(&env);
+
+    let token_a = Address::generate(&env);
+    let token_b = Address::generate(&env);
+    let token_c = Address::generate(&env);
+
+    contract.add_allowed_token(&admin, &token_a);
+    contract.add_allowed_token(&admin, &token_b);
+    contract.add_allowed_token(&admin, &token_c);
+
+    let allowed = contract.get_allowed_tokens();
+    assert_eq!(allowed.len(), 3);
+    assert_eq!(allowed.get(0).unwrap(), token_a);
+    assert_eq!(allowed.get(1).unwrap(), token_b);
+    assert_eq!(allowed.get(2).unwrap(), token_c);
+}
+
+#[test]
+fn test_create_job_with_whitelisted_token_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let (contract, client, freelancer, token, admin) = setup_test(&env);
+
+    // Add the token to the whitelist
+    contract.add_allowed_token(&admin, &token);
+
+    let milestones = vec![&env, (String::from_str(&env, "Work"), 1000_i128, JOB_DEADLINE)];
+    let job_id = contract.create_job(&client, &freelancer, &token, &milestones, &JOB_DEADLINE, &GRACE_PERIOD);
+    assert_eq!(job_id, 1);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_create_job_with_non_whitelisted_token_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let (contract, client, freelancer, token, admin) = setup_test(&env);
+
+    // Register a separate token NOT added to the whitelist
+    let other_token = env.register_stellar_asset_contract_v2(Address::generate(&env)).address();
+
+    // Add original token to whitelist, but not other_token
+    contract.add_allowed_token(&admin, &token);
+
+    let milestones = vec![&env, (String::from_str(&env, "Work"), 1000_i128, JOB_DEADLINE)];
+    contract.create_job(&client, &freelancer, &other_token, &milestones, &JOB_DEADLINE, &GRACE_PERIOD);
+}
+
+#[test]
+fn test_token_validation_happens_before_auth() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, _client, freelancer, token, admin) = setup_test(&env);
+
+    // Add original token to whitelist
+    contract.add_allowed_token(&admin, &token);
+
+    let other_token = Address::generate(&env);
+    let milestones = vec![&env, (String::from_str(&env, "Work"), 1000_i128, JOB_DEADLINE)];
+
+    // This should fail with TokenNotAllowed (#13) BEFORE any auth check
+    let result = contract.try_create_job(
+        &Address::generate(&env),
+        &freelancer,
+        &other_token,
+        &milestones,
+        &JOB_DEADLINE,
+        &GRACE_PERIOD,
+    );
+    // Contract errors are surfaced as Err(Ok(contract_error)) in try_* calls
+    let contract_err = result.err().unwrap().unwrap();
+    assert_eq!(contract_err, EscrowError::TokenNotAllowed);
+}
+
 
 // ============================================================
 // STATE MACHINE VALIDATION TESTS
