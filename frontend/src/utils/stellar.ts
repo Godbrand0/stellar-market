@@ -10,6 +10,7 @@ import {
 const RPC_URL =
   process.env.NEXT_PUBLIC_STELLAR_RPC_URL || "https://soroban-testnet.stellar.org";
 const NETWORK_PASSPHRASE = Networks.TESTNET;
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 /**
  * Parses the on-chain job ID from the Soroban contract return value XDR.
@@ -48,6 +49,66 @@ export function parseJobIdFromResult(returnValueXdr: string): number {
       `Failed to parse on-chain job ID from transaction result: ${err instanceof Error ? err.message : String(err)}`
     );
   }
+}
+
+export type TxType = "DEPOSIT" | "RELEASE" | "REFUND" | "DISPUTE_PAYOUT";
+
+export interface PreRegisterOptions {
+  type: TxType;
+  jobId?: string;
+  authToken: string;
+  fromAddress?: string;
+  toAddress?: string;
+  amount?: number;
+  tokenAddress?: string;
+}
+
+/**
+ * Pre-registers a signed transaction with the backend before broadcasting.
+ * Returns the txHash. If the submit call subsequently throws (network drop),
+ * the caller can poll /api/transactions/:txHash/status to recover state.
+ */
+export async function submitWithPreRegistration(
+  tx: Transaction,
+  options: PreRegisterOptions,
+): Promise<string> {
+  const txHash = tx.hash().toString("hex");
+  const server = new rpc.Server(RPC_URL);
+
+  // Extract max_ledger_version from the transaction timebounds
+  let maxLedger: number | undefined;
+  try {
+    const timeBounds = tx.toEnvelope().tx().timeBounds();
+    if (timeBounds) {
+      const raw = timeBounds.maxTime().toString();
+      const parsed = parseInt(raw, 10);
+      if (!isNaN(parsed) && parsed > 0) maxLedger = parsed;
+    }
+  } catch {
+    // timeBounds may not be present — proceed without maxLedger
+  }
+
+  // Pre-register before broadcasting — adds < 50 ms (single DB upsert)
+  await fetch(`${API_URL}/api/transactions/pre-register`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${options.authToken}`,
+    },
+    body: JSON.stringify({
+      txHash,
+      type: options.type,
+      jobId: options.jobId,
+      maxLedger,
+      fromAddress: options.fromAddress,
+      toAddress: options.toAddress,
+      amount: options.amount,
+      tokenAddress: options.tokenAddress,
+    }),
+  });
+
+  await server.submitTransaction(tx);
+  return txHash;
 }
 
 export type TransactionPreview = {
