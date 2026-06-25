@@ -9,6 +9,7 @@ export const ALLOWED_MIME_TYPES = [
   "image/jpeg", // JPG
   "image/png", // PNG
   "video/mp4", // MP4
+  "application/zip", // ZIP
 ];
 
 // Max file size: 10MB
