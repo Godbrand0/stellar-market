@@ -12,6 +12,7 @@ import { errorHandler } from "./middleware/error";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { requestTimeoutMiddleware } from "./middleware/timeout";
 import { initSocket } from "./socket";
+import { initYjsServer } from "./socket/yjsServer";
 import { startExpiryJob } from "./jobs/expiry.job";
 import { startPendingTxJob } from "./jobs/pending-tx.job";
 import { startEscrowTtlJob } from "./jobs/escrow-ttl.job";
@@ -39,6 +40,8 @@ installRequestIdConsolePatch();
 
 // Attach Socket.io
 initSocket(httpServer);
+// Attach Yjs WebSocket server (milestone negotiation rooms)
+initYjsServer(httpServer);
 
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
